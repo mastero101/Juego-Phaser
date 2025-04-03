@@ -83,6 +83,61 @@ class GameScene extends Phaser.Scene {
         // Add collisions and overlaps
         this.physics.add.collider(this.player, this.treeTiles);
         this.physics.add.overlap(this.player, this.waterTiles, this.handleWaterMovement, null, this);
+
+        // Setup status menu key
+        this.statusKey = this.input.keyboard.addKey('E');
+        
+        // Create status menu (initially hidden)
+        this.statusMenu = this.add.container(10, 10);
+        this.statusMenu.setScrollFactor(0);
+        
+        // Create styled background with border
+        const menuBg = this.add.rectangle(150, 100, 280, 180, 0x2d2d2d, 0.85);
+        menuBg.setStrokeStyle(2, 0x4a4a4a);
+        this.statusMenu.add(menuBg);
+        
+        // Add decorative header
+        const headerBg = this.add.rectangle(150, 30, 280, 40, 0x3d3d3d, 0.9);
+        headerBg.setStrokeStyle(2, 0x4a4a4a);
+        this.statusMenu.add(headerBg);
+        
+        // Add header text
+        const headerText = this.add.text(150, 30, 'CHARACTER STATUS', {
+            font: 'bold 18px Arial',
+            fill: '#ffffff'
+        });
+        headerText.setOrigin(0.5);
+        this.statusMenu.add(headerText);
+        
+        // Create status texts with improved styling
+        const style = {
+            font: '16px Arial',
+            fill: '#ffffff',
+            padding: { x: 10, y: 5 }
+        };
+        
+        const stats = [
+            { label: 'Level:', value: '1' },
+            { label: 'Health:', value: '100/100', color: '#ff6b6b' },
+            { label: 'Mana:', value: '50/50', color: '#4dabf7' },
+            { label: 'Strength:', value: '10', color: '#ffd43b' },
+            { label: 'Defense:', value: '5', color: '#69db7c' }
+        ];
+        
+        stats.forEach((stat, index) => {
+            const y = 60 + (index * 25);
+            
+            // Add label
+            const label = this.add.text(40, y, stat.label, style);
+            this.statusMenu.add(label);
+            
+            // Add value with custom color
+            const valueStyle = {...style, fill: stat.color || '#ffffff'};
+            const value = this.add.text(170, y, stat.value, valueStyle);
+            this.statusMenu.add(value);
+        });
+        
+        this.statusMenu.setVisible(false);
     }
 
     update() {
@@ -123,6 +178,17 @@ class GameScene extends Phaser.Scene {
         } else {
             this.player.setTexture('playerIdle');
             this.player.anims.stop();
+        }
+
+        // Status menu toggle
+        if (Phaser.Input.Keyboard.JustDown(this.statusKey)) {
+            this.statusMenu.setVisible(!this.statusMenu.visible);
+        }
+        
+        // Disable movement when menu is open
+        if (this.statusMenu.visible) {
+            this.player.setVelocity(0, 0);
+            return;
         }
     }
 
