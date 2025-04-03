@@ -1,6 +1,30 @@
 class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
+        
+        // Initialize player stats
+        this.playerStats = {
+            level: 1,
+            health: 100,
+            maxHealth: 100,
+            mana: 50,
+            maxMana: 50,
+            magicLevel: 1,
+            strength: 10,
+            defense: 5,
+            experience: 0,
+            nextLevel: 100,
+            weaponSkills: {
+                sword: 5,
+                bow: 1,
+                staff: 3
+            },
+            magicSkills: {
+                fire: 2,
+                ice: 1,
+                lightning: 1
+            }
+        };
     }
 
     preload() {
@@ -92,24 +116,27 @@ class GameScene extends Phaser.Scene {
         this.statusMenu.setScrollFactor(0);
         
         // Create styled background with border
-        const menuBg = this.add.rectangle(150, 100, 280, 180, 0x2d2d2d, 0.85);
+        const menuBg = this.add.rectangle(150, 100, 320, 600, 0x2d2d2d, 0.85);
         menuBg.setStrokeStyle(2, 0x4a4a4a);
         this.statusMenu.add(menuBg);
         
         // Add decorative header
-        const headerBg = this.add.rectangle(150, 30, 280, 40, 0x3d3d3d, 0.9);
+        const headerBg = this.add.rectangle(150, 30, 320, 40, 0x3d3d3d, 0.9);
         headerBg.setStrokeStyle(2, 0x4a4a4a);
         this.statusMenu.add(headerBg);
+
+        // Create collapsible sections
+        this.createBaseStats();
+        this.createCollapsibleSection('WEAPON SKILLS', this.playerStats.weaponSkills, 200);
+        this.createCollapsibleSection('MAGIC SKILLS', this.playerStats.magicSkills, 300);
         
-        // Add header text
-        const headerText = this.add.text(150, 30, 'CHARACTER STATUS', {
-            font: 'bold 18px Arial',
-            fill: '#ffffff'
-        });
-        headerText.setOrigin(0.5);
-        this.statusMenu.add(headerText);
-        
-        // Create status texts with improved styling
+        this.statusMenu.setVisible(false);
+
+        // Add mouse input for the whole scene
+        this.input.on('gameobjectdown', this.handleMenuClick, this);
+    }
+
+    createBaseStats() {
         const style = {
             font: '16px Arial',
             fill: '#ffffff',
@@ -117,27 +144,87 @@ class GameScene extends Phaser.Scene {
         };
         
         const stats = [
-            { label: 'Level:', value: '1' },
-            { label: 'Health:', value: '100/100', color: '#ff6b6b' },
-            { label: 'Mana:', value: '50/50', color: '#4dabf7' },
-            { label: 'Strength:', value: '10', color: '#ffd43b' },
-            { label: 'Defense:', value: '5', color: '#69db7c' }
+            { label: 'Level:', value: this.playerStats.level.toString() },
+            { label: 'Health:', value: `${this.playerStats.health}/${this.playerStats.maxHealth}`, color: '#ff6b6b' },
+            { label: 'Mana:', value: `${this.playerStats.mana}/${this.playerStats.maxMana}`, color: '#4dabf7' },
+            { label: 'Magic Level:', value: this.playerStats.magicLevel.toString(), color: '#9775fa' },
+            { label: 'Strength:', value: this.playerStats.strength.toString(), color: '#ffd43b' },
+            { label: 'Defense:', value: this.playerStats.defense.toString(), color: '#69db7c' }
         ];
-        
-        stats.forEach((stat, index) => {
-            const y = 60 + (index * 25);
-            
-            // Add label
-            const label = this.add.text(40, y, stat.label, style);
-            this.statusMenu.add(label);
-            
-            // Add value with custom color
+
+        let currentY = 55;
+        stats.forEach(stat => {
+            const label = this.add.text(40, currentY, stat.label, style);
             const valueStyle = {...style, fill: stat.color || '#ffffff'};
-            const value = this.add.text(170, y, stat.value, valueStyle);
+            const value = this.add.text(170, currentY, stat.value, valueStyle);
+            this.statusMenu.add(label);
             this.statusMenu.add(value);
+            currentY += 25;
+        });
+    }
+
+    createCollapsibleSection(title, items, startY) {
+        const style = {
+            font: '14px Arial',
+            fill: '#ffffff'
+        };
+
+        // Create section header
+        const headerBg = this.add.rectangle(120, startY, 200, 25, 0x3d3d3d, 0.9);
+        headerBg.setStrokeStyle(1, 0x6d6d6d);
+        headerBg.setInteractive({ useHandCursor: true });
+        
+        // Add header text and toggle button
+        const headerText = this.add.text(40, startY - 8, title, {
+            ...style,
+            font: 'bold 14px Arial'
         });
         
-        this.statusMenu.setVisible(false);
+        const toggleButton = this.add.text(195, startY - 8, '+', {
+            font: 'bold 16px Arial',
+            fill: '#ffffff'
+        });
+
+        // Create content container
+        const content = this.add.container(0, startY + 25);
+        
+        // Add items with background
+        Object.entries(items).forEach(([key, value], index) => {
+            const y = index * 25;
+            const itemBg = this.add.rectangle(120, y, 180, 22, 0x232323, 0.7);
+            const label = this.add.text(40, y - 8, key + ':', style);
+            const valueText = this.add.text(140, y - 8, value.toString(), {
+                ...style,
+                fill: '#ffd700'
+            });
+            
+            content.add([itemBg, label, valueText]);
+        });
+
+        this.statusMenu.add([headerBg, headerText, toggleButton, content]);
+        content.setVisible(false);
+
+        // Handle click events
+        headerBg.on('pointerdown', () => {
+            content.setVisible(!content.visible);
+            toggleButton.setText(content.visible ? '-' : '+');
+        });
+
+        return { header: headerBg, content };
+    }
+
+    getNextSection(currentY) {
+        const sections = this.statusMenu.list.filter(item => 
+            item.type === 'Container' && 
+            item.y > currentY
+        );
+        return sections[0];
+    }
+
+    handleMenuClick(pointer, gameObject) {
+        if (this.statusMenu.visible && gameObject.contentRef) {
+            gameObject.emit('pointerdown');
+        }
     }
 
     update() {
