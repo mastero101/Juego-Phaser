@@ -25,23 +25,49 @@ class GameScene extends Phaser.Scene {
                 lightning: 1
             }
         };
-    }
 
-    preload() {
-        // We'll create the character in create() method
+        // Initialize enemy types
+        this.enemyTypes = {
+            slime: {
+                health: 20,
+                damage: 5,
+                speed: 40,
+                experience: 15,
+                color: 0x00FF00
+            },
+            skeleton: {
+                health: 35,
+                damage: 8,
+                speed: 60,
+                experience: 25,
+                color: 0xCCCCCC
+            },
+            goblin: {
+                health: 30,
+                damage: 6,
+                speed: 80,
+                experience: 20,
+                color: 0x967969
+            }
+        };
     }
 
     create() {
         const graphics = this.add.graphics();
         
-        // Create textures
+        // Create textures first
         this.createTileTextures();
+        this.createCharacterTexture(graphics, 'playerIdle', false);
+        this.createCharacterTexture(graphics, 'playerWalk1', true);
+        this.createCharacterTexture(graphics, 'playerWalk2', false);
+        this.createEnemyTextures();
         
         // Create physics groups
         this.waterTiles = this.physics.add.staticGroup();
         this.treeTiles = this.physics.add.staticGroup();
+        this.enemies = this.physics.add.group();
         
-        // Generate random map
+        // Generate map
         for (let y = 0; y < 50; y++) {
             for (let x = 0; x < 50; x++) {
                 const tileX = x * 32;
@@ -68,17 +94,20 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Create player and setup
-        this.createCharacterTexture(graphics, 'playerIdle', false);
-        this.createCharacterTexture(graphics, 'playerWalk1', true);
-        this.createCharacterTexture(graphics, 'playerWalk2', false);
-        
+        // Initialize player after map
         this.player = this.physics.add.sprite(400, 300, 'playerIdle');
         this.player.setScale(2);
         this.player.setDepth(1);
         
-        // Add water overlap detection
+        // Setup collisions
+        this.physics.add.collider(this.player, this.treeTiles);
         this.physics.add.overlap(this.player, this.waterTiles, this.handleWaterMovement, null, this);
+        this.physics.add.collider(this.player, this.enemies, this.handleEnemyCollision, null, this);
+        this.physics.add.collider(this.enemies, this.treeTiles);
+        this.physics.add.collider(this.enemies, this.enemies);
+
+        // Spawn enemies after all collisions are set
+        this.spawnEnemies();
         
         // Setup controls
         this.cursors = this.input.keyboard.createCursorKeys();
@@ -480,5 +509,140 @@ class GameScene extends Phaser.Scene {
                 y = Phaser.Math.Clamp(y, 0, 49);
             }
         }
+    }
+
+    createEnemyTextures() {
+        const graphics = this.add.graphics();
+        
+        Object.entries(this.enemyTypes).forEach(([type, data]) => {
+            graphics.clear();
+            graphics.fillStyle(data.color);
+            
+            // Base shape
+            graphics.fillRect(8, 8, 16, 16);
+            
+            // Details based on enemy type
+            if (type === 'slime') {
+                graphics.fillStyle(0x00AA00);
+                graphics.fillRect(10, 12, 4, 4);
+                graphics.fillRect(18, 12, 4, 4);
+            } else if (type === 'skeleton') {
+                graphics.fillStyle(0xFFFFFF);
+                graphics.fillRect(12, 12, 2, 2);
+                graphics.fillRect(18, 12, 2, 2);
+            } else if (type === 'goblin') {
+                graphics.fillStyle(0x554422);
+                graphics.fillRect(10, 16, 12, 4);
+            }
+            
+            graphics.generateTexture(type, 32, 32);
+        });
+        
+        graphics.destroy();
+    }
+
+    spawnEnemies() {
+        const enemyTypes = Object.keys(this.enemyTypes);
+        
+        // Spawn 10 random enemies
+        for (let i = 0; i < 10; i++) {
+            const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+            const x = Phaser.Math.Between(100, 1500);
+            const y = Phaser.Math.Between(100, 1500);
+            
+            const enemy = this.enemies.create(x, y, type);
+            enemy.setData('type', type);
+            enemy.setData('health', this.enemyTypes[type].health);
+            enemy.setData('damage', this.enemyTypes[type].damage);
+            enemy.setData('speed', this.enemyTypes[type].speed);
+            enemy.setData('experience', this.enemyTypes[type].experience);
+        }
+    }
+
+    handleEnemyCollision(player, enemy) {
+        // Basic collision handling
+        const damage = enemy.getData('damage');
+        this.playerStats.health = Math.max(0, this.playerStats.health - damage);
+        
+        // Simple knockback
+        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, player.x, player.y);
+        player.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
+    }
+
+    update() {
+        const baseSpeed = 160;
+        const speed = this.isInWater ? baseSpeed * 0.5 : baseSpeed;
+        this.isInWater = false;  // Reset water state each frame
+        
+        let velocityX = 0;
+        let velocityY = 0;
+
+        // Calculate movement
+        if (this.cursors.left.isDown || this.wasd.left.isDown) {
+            velocityX = -speed;
+            this.player.setFlipX(true);
+        } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
+            velocityX = speed;
+            this.player.setFlipX(false);
+        }
+
+        if (this.cursors.up.isDown || this.wasd.up.isDown) {
+            velocityY = -speed;
+        } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
+            velocityY = speed;
+        }
+
+        // Apply diagonal movement normalization
+        if (velocityX !== 0 && velocityY !== 0) {
+            velocityX *= 0.707;
+            velocityY *= 0.707;
+        }
+
+        // Apply movement
+        this.player.setVelocity(velocityX, velocityY);
+
+        // Animation control
+        if (velocityX !== 0 || velocityY !== 0) {
+            this.player.anims.play('walk', true);
+        } else {
+            this.player.setTexture('playerIdle');
+            this.player.anims.stop();
+        }
+
+        // Status menu toggle
+        if (Phaser.Input.Keyboard.JustDown(this.statusKey)) {
+            this.statusMenu.setVisible(!this.statusMenu.visible);
+        }
+        
+        // Disable movement when menu is open
+        if (this.statusMenu.visible) {
+            this.player.setVelocity(0, 0);
+            return;
+        }
+        
+        // Update enemies
+        this.enemies.getChildren().forEach(enemy => {
+            if (enemy.active) {
+                const distance = Phaser.Math.Distance.Between(
+                    enemy.x, enemy.y,
+                    this.player.x, this.player.y
+                );
+                
+                if (distance < 200) {
+                    const angle = Phaser.Math.Angle.Between(
+                        enemy.x, enemy.y,
+                        this.player.x, this.player.y
+                    );
+                    
+                    const speed = enemy.getData('speed');
+                    enemy.setVelocity(
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed
+                    );
+                } else {
+                    enemy.setVelocity(0, 0);
+                }
+            }
+        });
     }
 }
