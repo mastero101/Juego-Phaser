@@ -83,12 +83,12 @@ class CombatSystem {
 
     checkEnemyHits() {
         // Ensure enemySystem and enemies array exists and is valid
-        if (!this.scene.enemySystem?.enemies || !Array.isArray(this.scene.enemySystem.enemies)) {
+        if (!this.scene.enemySystem?.enemies || !Array.isArray(this.scene.enemySystem.enemies.getChildren())) {
             return;
         }
 
         // Now safely iterate through enemies
-        this.scene.enemySystem.enemies.forEach(enemy => {
+        this.scene.enemySystem.enemies.getChildren().forEach(enemy => {
             if (!enemy) return; // Skip if enemy is invalid
             
             const distance = Phaser.Math.Distance.Between(
@@ -116,7 +116,7 @@ class CombatSystem {
         this.sword.setVisible(true);
         this.sword.setFlipX(direction === -1);
 
-        // Create slash effect
+        // Create slash effect and check hits
         const slash = this.scene.add.sprite(
             this.player.sprite.x + (40 * direction),
             this.player.sprite.y,
@@ -135,10 +135,14 @@ class CombatSystem {
             alpha: 0,
             duration: this.attackDuration,
             ease: 'Power2',
-            onComplete: () => slash.destroy()
+            onComplete: () => {
+                slash.destroy();
+                // Reset attack cooldown here
+                this.attackCooldown = false;
+            }
         });
 
-        // Check for hits before animation
+        // Check for hits
         this.checkEnemyHits();
 
         // Sword swing animation
@@ -151,8 +155,8 @@ class CombatSystem {
                 this.sword.setAngle(direction === 1 ? -45 : 45);
             },
             onComplete: () => {
+                this.sword.setAngle(0);
                 this.sword.setVisible(false);
-                this.attackCooldown = false;
             }
         });
     }
@@ -250,10 +254,7 @@ class CombatSystem {
         // Check if enemy is defeated
         if (enemy.health <= 0) {
             if (enemy.healthBarContainer) enemy.healthBarContainer.destroy();
-            enemy.destroy();
-            if (this.scene.enemySystem) {
-                this.scene.enemySystem.enemies = this.scene.enemySystem.enemies.filter(e => e !== enemy);
-            }
+            this.scene.enemySystem.enemies.remove(enemy, true, true);
         }
     }
 
