@@ -29,58 +29,59 @@ class MobileControls {
         const joystickRadius = 100;
         const buttonAlpha = 0.8;
 
-        // Crear una cámara UI específica para los controles
-        const uiCamera = this.scene.cameras.add(0, 0, 
-            this.scene.game.config.width, 
-            this.scene.game.config.height
-        );
-        uiCamera.setScroll(0, 0);
-        uiCamera.ignore(this.scene.containers); // Ignorar los contenedores del juego
-
         this.container = this.scene.add.container(0, 0)
             .setScrollFactor(0)
             .setDepth(1000);
 
-        // Asegurarse de que la UI camera solo renderiza los controles
-        uiCamera.ignore(this.scene.children.list);
-        uiCamera.startFollow(this.container, true, 1, 1);
+        // Configurar los elementos para que sean fijos
+        const makeFixed = (gameObject) => {
+            gameObject.setScrollFactor(0);
+            return gameObject;
+        };
 
-        // Adjusted joystick base position more to the right
+        // Joystick
         const baseX = padding + joystickRadius + 50;
         const baseY = this.scene.game.config.height - padding - joystickRadius - 30;
 
-        this.joystickBase = this.scene.add.circle(baseX, baseY, joystickRadius, 0x333333, 0.3);
-        this.joystickThumb = this.scene.add.circle(baseX, baseY, 40, 0x666666, 0.8);
+        this.joystickBase = makeFixed(this.scene.add.circle(baseX, baseY, joystickRadius, 0x333333, 0.3));
+        this.joystickThumb = makeFixed(this.scene.add.circle(baseX, baseY, 40, 0x666666, 0.8));
 
-        // Make joystick interactive
-        this.joystickBase.setInteractive()
-            .on('pointerdown', (pointer) => this.startJoystick(pointer))
-            .on('pointerup', () => this.stopJoystick())
-            .on('pointerout', () => this.stopJoystick());
-
-        this.scene.input.on('pointermove', (pointer) => {
-            if (this.joystick.isActive && this.joystick.pointer === pointer) {
-                this.updateJoystick(pointer);
-            }
-        });
-
-        // Attack button mejorado
-        const attackButton = this.scene.add.circle(
+        // Attack button
+        const attackButton = makeFixed(this.scene.add.circle(
             this.scene.game.config.width - padding - buttonSize,
             this.scene.game.config.height - padding - buttonSize,
             buttonSize/2,
             0xff0000
-        )
-        .setAlpha(buttonAlpha)
-        .setInteractive();
+        ).setAlpha(buttonAlpha));
 
-        const attackText = this.scene.add.text(
+        const attackText = makeFixed(this.scene.add.text(
             this.scene.game.config.width - padding - buttonSize,
             this.scene.game.config.height - padding - buttonSize,
             '⚔️',
             { font: '40px Arial' }
-        ).setOrigin(0.5);
+        ).setOrigin(0.5));
 
+        // Menu button
+        const menuButton = makeFixed(this.scene.add.circle(
+            this.scene.game.config.width - padding - buttonSize,
+            this.scene.game.config.height - padding * 3 - buttonSize,
+            buttonSize/2,
+            0x4a4a4a
+        ).setAlpha(buttonAlpha));
+
+        const menuText = makeFixed(this.scene.add.text(
+            this.scene.game.config.width - padding - buttonSize,
+            this.scene.game.config.height - padding * 3 - buttonSize,
+            '📋',
+            { font: '40px Arial' }
+        ).setOrigin(0.5));
+
+        // Hacer los botones interactivos
+        this.joystickBase.setInteractive();
+        attackButton.setInteractive();
+        menuButton.setInteractive();
+
+        // Eventos de los botones
         attackButton
             .on('pointerdown', () => {
                 this.controls.attack = true;
@@ -95,33 +96,12 @@ class MobileControls {
                 this.controls.attack = false;
             });
 
-        // Menu button mejorado
-        const menuButton = this.scene.add.circle(
-            this.scene.game.config.width - padding - buttonSize,
-            this.scene.game.config.height - padding * 3 - buttonSize,
-            buttonSize/2,
-            0x4a4a4a
-        )
-        .setAlpha(buttonAlpha)
-        .setInteractive();
-
-        const menuText = this.scene.add.text(
-            this.scene.game.config.width - padding - buttonSize,
-            this.scene.game.config.height - padding * 3 - buttonSize,
-            '📋',
-            { font: '40px Arial' }
-        ).setOrigin(0.5);
-
-        // Eliminar el evento duplicado y mantener solo este
         menuButton.on('pointerdown', () => {
             if (this.scene.statusMenu) {
                 this.scene.statusMenu.toggle();
             }
         });
 
-        // Eliminar los eventos pointerup y pointerout del menú ya que no los necesitamos
-        
-        // Hacer que la UI camera solo renderice los elementos del container
         this.container.add([
             this.joystickBase, 
             this.joystickThumb, 
@@ -130,8 +110,6 @@ class MobileControls {
             menuButton,
             menuText
         ]);
-
-        uiCamera.startFollow(this.container, true, 1, 1);
     }
 
     destroy() {
