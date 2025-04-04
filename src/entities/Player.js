@@ -69,4 +69,27 @@ class Player {
     handleWaterCollision() {
         this.isInWater = true;
     }
+
+    updateWithMobileControls(mobileInput) {
+        const speed = 200;
+
+        if (mobileInput.left) {
+            this.sprite.setVelocityX(-speed);
+            this.sprite.flipX = true;
+        } else if (mobileInput.right) {
+            this.sprite.setVelocityX(speed);
+            this.sprite.flipX = false;
+        }
+
+        if (mobileInput.up) {
+            this.sprite.setVelocityY(-speed);
+        } else if (mobileInput.down) {
+            this.sprite.setVelocityY(speed);
+        }
+
+        // Normalize diagonal movement
+        if (this.sprite.body.velocity.x !== 0 && this.sprite.body.velocity.y !== 0) {
+            this.sprite.body.velocity.normalize().scale(speed);
+        }
+    }
 }

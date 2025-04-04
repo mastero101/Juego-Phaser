@@ -20,6 +20,17 @@ class GameScene extends Phaser.Scene {
         createCharacterTexture(this, 'playerWalk2', false);
         createEnemyTextures(this, this.enemyTypes);
         
+        // Create slash effect texture
+        if (!this.textures.exists('slash')) {
+            const slashGraphics = this.add.graphics();
+            slashGraphics.lineStyle(3, 0xFFFFFF, 0.8);
+            slashGraphics.beginPath();
+            slashGraphics.arc(32, 32, 24, 0, Math.PI, true);
+            slashGraphics.strokePath();
+            slashGraphics.generateTexture('slash', 64, 64);
+            slashGraphics.destroy();
+        }
+        
         // Initialize containers for map generation
         this.containers = {
             ground: this.add.container(0, 0),
@@ -82,6 +93,13 @@ class GameScene extends Phaser.Scene {
 
         // Crear barras de salud y maná en la parte superior derecha
         this.createTopRightBars();
+
+        // Initialize combat system after player and enemy system are created
+        this.combatSystem = new CombatSystem(this);
+        this.combatSystem.initialize();
+
+        // Add mobile controls if on touch device
+        this.mobileControls = new MobileControls(this);
     }
 
     createWaterEffects() {
@@ -190,6 +208,28 @@ class GameScene extends Phaser.Scene {
         // }
         // Update the bars
         this.updateTopRightBars();
+
+        // Update combat system
+        if (this.combatSystem && this.enemySystem.enemies.length > 0) {
+            // Find closest enemy
+            const playerPos = this.player.sprite;
+            const closestEnemy = this.enemySystem.enemies.reduce((closest, current) => {
+                const currentDist = Phaser.Math.Distance.Between(
+                    playerPos.x, playerPos.y,
+                    current.x, current.y
+                );
+                const closestDist = closest ? Phaser.Math.Distance.Between(
+                    playerPos.x, playerPos.y,
+                    closest.x, closest.y
+                ) : Infinity;
+                return currentDist < closestDist ? current : closest;
+            });
+
+            // Update player direction based on closest enemy
+            if (closestEnemy) {
+                this.player.sprite.flipX = closestEnemy.x < this.player.sprite.x;
+            }
+        }
     }
 
     setupKeyboardEvents() {
@@ -317,6 +357,78 @@ class GameScene extends Phaser.Scene {
             // Update text to show current/max values
             this.healthText.setText(`HP: ${Math.floor(this.playerStats.health)}/${this.playerStats.maxHealth}`);
             this.manaText.setText(`MP: ${Math.floor(this.playerStats.mana)}/${this.playerStats.maxMana}`);
+        }
+    }
+
+    update(time, delta) {
+        this.player.update(this.cursors, this.wasd, this.statusMenu.visible);
+        this.enemySystem.update();
+        
+        // Verificar que enemies existe antes de actualizar etiquetas
+        if (this.enemySystem.enemies && Array.isArray(this.enemySystem.enemies)) {
+            this.enemySystem.enemies.forEach(enemy => {
+                if (enemy.nameTag) {
+                    enemy.nameTag.setPosition(enemy.x, enemy.y - 20);
+                }
+            });
+        }
+
+        // Actualizamos efectos de partículas si el jugador está en agua
+        if (this.player.isInWater) {
+            this.events.emit('playerInWater', 
+                this.player.sprite.x, 
+                this.player.sprite.y
+            );
+        } else {
+            this.events.emit('playerOutWater');
+        }
+
+        // Actualizar efecto de agua
+        if (this.waterEffect) {
+            this.waterEffect.update(this, delta);
+        }
+
+        // Actualizar barras de salud y maná
+        this.statusMenu.updateBar(this.statusMenu.healthBar, this.playerStats.health);
+        this.statusMenu.updateBar(this.statusMenu.manaBar, this.playerStats.mana);
+
+        // Eliminar la lógica que actualiza la posición del menú
+        // if (this.statusMenu && this.statusMenu.container) {
+        //     const camera = this.cameras.main;
+        //     this.statusMenu.container.setPosition(
+        //         camera.scrollX + 10,
+        //         camera.scrollY + 10
+        //     );
+        // }
+        // Update the bars
+        this.updateTopRightBars();
+
+        // Update combat system
+        if (this.combatSystem && this.enemySystem.enemies.length > 0) {
+            // Find closest enemy
+            const playerPos = this.player.sprite;
+            const closestEnemy = this.enemySystem.enemies.reduce((closest, current) => {
+                const currentDist = Phaser.Math.Distance.Between(
+                    playerPos.x, playerPos.y,
+                    current.x, current.y
+                );
+                const closestDist = closest ? Phaser.Math.Distance.Between(
+                    playerPos.x, playerPos.y,
+                    closest.x, closest.y
+                ) : Infinity;
+                return currentDist < closestDist ? current : closest;
+            });
+
+            // Update player direction based on closest enemy
+            if (closestEnemy) {
+                this.player.sprite.flipX = closestEnemy.x < this.player.sprite.x;
+            }
+        }
+
+        // Update player with mobile controls if available
+        if (this.mobileControls) {
+            const mobileInput = this.mobileControls.getControls();
+            this.player.updateWithMobileControls(mobileInput);
         }
     }
 }
