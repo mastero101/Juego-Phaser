@@ -5,7 +5,9 @@ class MobileControls {
             up: false,
             down: false,
             left: false,
-            right: false
+            right: false,
+            attack: false,    // Añadido control de ataque
+            menu: false      // Añadido control de menú
         };
         this.joystick = {
             isActive: false,
@@ -27,13 +29,25 @@ class MobileControls {
         const joystickRadius = 100;
         const buttonAlpha = 0.8;
 
+        // Crear una cámara UI específica para los controles
+        const uiCamera = this.scene.cameras.add(0, 0, 
+            this.scene.game.config.width, 
+            this.scene.game.config.height
+        );
+        uiCamera.setScroll(0, 0);
+        uiCamera.ignore(this.scene.containers); // Ignorar los contenedores del juego
+
         this.container = this.scene.add.container(0, 0)
             .setScrollFactor(0)
             .setDepth(1000);
 
+        // Asegurarse de que la UI camera solo renderiza los controles
+        uiCamera.ignore(this.scene.children.list);
+        uiCamera.startFollow(this.container, true, 1, 1);
+
         // Adjusted joystick base position more to the right
-        const baseX = padding + joystickRadius + 35;
-        const baseY = this.scene.game.config.height - padding - joystickRadius;
+        const baseX = padding + joystickRadius + 50;
+        const baseY = this.scene.game.config.height - padding - joystickRadius - 30;
 
         this.joystickBase = this.scene.add.circle(baseX, baseY, joystickRadius, 0x333333, 0.3);
         this.joystickThumb = this.scene.add.circle(baseX, baseY, 40, 0x666666, 0.8);
@@ -50,7 +64,7 @@ class MobileControls {
             }
         });
 
-        // Attack button
+        // Attack button mejorado
         const attackButton = this.scene.add.circle(
             this.scene.game.config.width - padding - buttonSize,
             this.scene.game.config.height - padding - buttonSize,
@@ -67,7 +81,21 @@ class MobileControls {
             { font: '40px Arial' }
         ).setOrigin(0.5);
 
-        // Add menu button (positioned above attack button)
+        attackButton
+            .on('pointerdown', () => {
+                this.controls.attack = true;
+                if (this.scene.combatSystem) {
+                    this.scene.combatSystem.performAttack();
+                }
+            })
+            .on('pointerup', () => {
+                this.controls.attack = false;
+            })
+            .on('pointerout', () => {
+                this.controls.attack = false;
+            });
+
+        // Menu button mejorado
         const menuButton = this.scene.add.circle(
             this.scene.game.config.width - padding - buttonSize,
             this.scene.game.config.height - padding * 3 - buttonSize,
@@ -84,10 +112,16 @@ class MobileControls {
             { font: '40px Arial' }
         ).setOrigin(0.5);
 
+        // Eliminar el evento duplicado y mantener solo este
         menuButton.on('pointerdown', () => {
-            this.scene.statusMenu.toggle();
+            if (this.scene.statusMenu) {
+                this.scene.statusMenu.toggle();
+            }
         });
 
+        // Eliminar los eventos pointerup y pointerout del menú ya que no los necesitamos
+        
+        // Hacer que la UI camera solo renderice los elementos del container
         this.container.add([
             this.joystickBase, 
             this.joystickThumb, 
@@ -96,16 +130,24 @@ class MobileControls {
             menuButton,
             menuText
         ]);
+
+        uiCamera.startFollow(this.container, true, 1, 1);
     }
 
-    startJoystick(pointer) {
-        this.joystick.isActive = true;
-        this.joystick.pointer = pointer;
-        this.joystick.baseX = this.joystickBase.x;
-        this.joystick.baseY = this.joystickBase.y;
+    destroy() {
+        if (this.container) {
+            // Asegurarse de eliminar la cámara UI cuando se destruyen los controles
+            const uiCamera = this.scene.cameras.getCamerasBelowTop()[0];
+            if (uiCamera) {
+                this.scene.cameras.remove(uiCamera);
+            }
+            this.container.destroy();
+        }
     }
 
     updateJoystick(pointer) {
+        if (!this.joystick.isActive) return;
+
         const distance = Phaser.Math.Distance.Between(
             this.joystick.baseX, this.joystick.baseY,
             pointer.x, pointer.y
@@ -121,15 +163,58 @@ class MobileControls {
         this.joystickThumb.x = this.joystick.baseX + Math.cos(angle) * limitedDistance;
         this.joystickThumb.y = this.joystick.baseY + Math.sin(angle) * limitedDistance;
 
-        // Update controls based on joystick position
         const deadzone = 0.3;
         const normalizedX = Math.cos(angle) * (limitedDistance / radius);
         const normalizedY = Math.sin(angle) * (limitedDistance / radius);
 
+        // Actualizar solo los controles direccionales
         this.controls.left = normalizedX < -deadzone;
         this.controls.right = normalizedX > deadzone;
         this.controls.up = normalizedY < -deadzone;
         this.controls.down = normalizedY > deadzone;
+    }
+
+    startJoystick(pointer) {
+        this.joystick.isActive = true;
+        this.joystick.pointer = pointer;
+        this.joystick.baseX = this.joystickBase.x;
+        this.joystick.baseY = this.joystickBase.y;
+    }
+
+    updateJoystick(pointer) {
+        // Mantener el estado actual de attack y menu
+        const currentAttack = this.controls.attack;
+        const currentMenu = this.controls.menu;
+        
+        // Actualizar controles direccionales
+        const distance = Phaser.Math.Distance.Between(
+            this.joystick.baseX, this.joystick.baseY,
+            pointer.x, pointer.y
+        );
+        const angle = Phaser.Math.Angle.Between(
+            this.joystick.baseX, this.joystick.baseY,
+            pointer.x, pointer.y
+        );
+
+        const radius = this.joystickBase.width / 2;
+        const limitedDistance = Math.min(distance, radius);
+
+        this.joystickThumb.x = this.joystick.baseX + Math.cos(angle) * limitedDistance;
+        this.joystickThumb.y = this.joystick.baseY + Math.sin(angle) * limitedDistance;
+
+        const deadzone = 0.3;
+        const normalizedX = Math.cos(angle) * (limitedDistance / radius);
+        const normalizedY = Math.sin(angle) * (limitedDistance / radius);
+
+        // Actualizar solo los controles direccionales
+        this.controls.left = normalizedX < -deadzone;
+        this.controls.right = normalizedX > deadzone;
+        this.controls.up = normalizedY < -deadzone;
+        this.controls.down = normalizedY > deadzone;
+
+        // Restaurar el estado de attack y menu
+        this.controls.attack = currentAttack;
+        this.controls.menu = currentMenu;
     }
 
     stopJoystick() {
@@ -138,8 +223,12 @@ class MobileControls {
         this.joystickThumb.x = this.joystick.baseX;
         this.joystickThumb.y = this.joystick.baseY;
         
-        // Reset all controls
-        Object.keys(this.controls).forEach(key => this.controls[key] = false);
+        // Reset solo los controles direccionales
+        this.controls.up = false;
+        this.controls.down = false;
+        this.controls.left = false;
+        this.controls.right = false;
+        // Mantener el estado de attack y menu
     }
 
     getControls() {
