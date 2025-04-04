@@ -100,6 +100,22 @@ class GameScene extends Phaser.Scene {
 
         // Add mobile controls if on touch device
         this.mobileControls = new MobileControls(this);
+
+        // Detect orientation change
+        window.addEventListener('orientationchange', this.handleOrientationChange.bind(this));
+    }
+
+    handleOrientationChange() {
+        const orientation = window.screen.orientation.type;
+        if (orientation.includes('landscape')) {
+            this.scale.resize(window.innerWidth, window.innerHeight);
+            this.cameras.main.setBounds(0, 0, this.worldSize.width * this.worldSize.tileSize, this.worldSize.height * this.worldSize.tileSize);
+            this.cameras.main.setZoom(1); // Ensure zoom is set to 1 for full screen
+        } else if (orientation.includes('portrait')) {
+            this.scale.resize(600, 800); // Example portrait size
+            this.cameras.main.setBounds(0, 0, 600, 800);
+        }
+        this.cameras.main.centerOn(this.player.sprite.x, this.player.sprite.y);
     }
 
     createWaterEffects() {
@@ -236,7 +252,8 @@ class GameScene extends Phaser.Scene {
         // Status menu toggle with 'E' key
         this.statusKey.on('down', () => {
             this.statusMenu.toggle();
-            this.sound.play('menuToggle', { volume: 0.5 });
+            // Remove or comment out the line below to eliminate the audio effect
+            // this.sound.play('menuToggle', { volume: 0.5 });
         });
 
         // Evento para interacción con agua
@@ -430,5 +447,8 @@ class GameScene extends Phaser.Scene {
             const mobileInput = this.mobileControls.getControls();
             this.player.updateWithMobileControls(mobileInput);
         }
+
+        // Update the status menu with current stats
+        this.statusMenu.updateBaseStats();
     }
 }

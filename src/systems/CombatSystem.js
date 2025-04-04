@@ -5,8 +5,9 @@ class CombatSystem {
         this.attackCooldown = false;
         this.attackDuration = 300;
         this.attackRange = 50;
-        this.baseDamage = 20;
-        
+        this.baseDamage = 1;
+        this.damageCooldown = false; // Add damage cooldown property
+
         // Initialize player health if not exists
         if (!this.player.health) {
             this.player.health = 100;
@@ -169,7 +170,7 @@ class CombatSystem {
             // Create health bar container
             enemy.healthBarContainer = this.scene.add.container(enemy.x, enemy.y - 25);
             enemy.healthBarContainer.setDepth(1000);
-
+    
             // Background bar (gray)
             enemy.healthBarBg = this.scene.add.rectangle(-15, 0, 30, 4, 0x333333);
             // Health bar (red)
@@ -183,8 +184,26 @@ class CombatSystem {
             enemy.healthBarContainer.add([enemy.healthBarBg, enemy.healthBar, enemy.healthText]);
         }
         
-        const damage = this.baseDamage;
+        // Calculate damage based on player's strength
+        const playerStrength = this.scene.player.strength; // Use the player's current strength
+        const minDamage = playerStrength - 4; // Example: strength - 4
+        const maxDamage = playerStrength + 2; // Example: strength + 2
+        const baseDamage = Math.random() * (maxDamage - minDamage) + minDamage; // Random damage within range
+        
+        // Determine if a critical hit occurs
+        const critChance = playerStrength / 100; // Example: 1% crit chance per strength point
+        const isCriticalHit = Math.random() < critChance;
+        const critMultiplier = isCriticalHit ? 1.5 : 1; // 50% more damage on critical hit
+        
+        // Calculate final damage
+        const damage = (baseDamage * critMultiplier).toFixed(1); // Format to one decimal place
+
         enemy.health = Math.max(0, enemy.health - damage);
+    
+        // Log if critical hit occurred
+        if (isCriticalHit) {
+            console.log('Critical Hit!');
+        }
 
         // Update health bar and text
         const healthPercent = enemy.health / enemy.maxHealth;
@@ -255,6 +274,15 @@ class CombatSystem {
         if (enemy.health <= 0) {
             if (enemy.healthBarContainer) enemy.healthBarContainer.destroy();
             this.scene.enemySystem.enemies.remove(enemy, true, true);
+
+            // Award experience to player
+            this.player.gainExperience(20); // Example experience points
+
+            // Emit an event to update the status menu
+            this.scene.events.emit('enemyDefeated');
+
+            // Log player's experience
+            console.log(`Player Experience: ${this.player.experience}`);
         }
     }
 
@@ -297,4 +325,6 @@ class CombatSystem {
             });
         }
     }
+
+    
 }

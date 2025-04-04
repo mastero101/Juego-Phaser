@@ -35,6 +35,9 @@ class StatusMenu {
         this.createCollapsibleSection('MAGIC SKILLS', this.scene.playerStats.magicSkills, 390);
         
         this.container.setVisible(false);
+
+        // Listen for the enemyDefeated event to update stats
+        this.scene.events.on('enemyDefeated', this.updateBaseStats, this);
     }
 
     createText(scene, text, x, y, style = {}) {
@@ -51,14 +54,21 @@ class StatusMenu {
             fill: '#ffffff',
             padding: { x: 10, y: 5 }
         };
-        
+    
+        // Retrieve stats from local storage or use initial values
+        const savedStats = localStorage.getItem('playerStats');
+        const playerStats = savedStats ? JSON.parse(savedStats) : this.scene.playerStats;
+    
+        // Calculate next level experience
+        const nextLevelExperience = playerStats.level * 100; // Example calculation for next level
+    
         const stats = [
-            { label: 'Level:', value: this.scene.playerStats.level.toString(), color: '#ffd700' },
-            { label: 'Experience:', value: `${this.scene.playerStats.experience}/${this.scene.playerStats.nextLevel}`, color: '#00ff00' },
-            { label: 'Strength:', value: this.scene.playerStats.strength.toString(), color: '#ff9966' },
-            { label: 'Defense:', value: this.scene.playerStats.defense.toString(), color: '#66ccff' }
+            { label: 'Level:', value: playerStats.level.toString(), color: '#ffd700' },
+            { label: 'Experience:', value: `${playerStats.experience}/${nextLevelExperience}`, color: '#00ff00' }, // Use calculated next level experience
+            { label: 'Strength:', value: playerStats.strength.toString(), color: '#ff9966' },
+            { label: 'Defense:', value: playerStats.defense.toString(), color: '#66ccff' }
         ];
-
+    
         let currentY = 55;
         stats.forEach(stat => {
             const statBg = this.scene.add.rectangle(150, currentY + 10, 280, 30, 0x2b2b2b, 0.5);
@@ -206,5 +216,27 @@ class StatusMenu {
                 });
             }
         }
+    }
+
+    updateBaseStats() {
+        const stats = [
+            { label: 'Level:', value: this.scene.player.level.toString(), color: '#ffd700' },
+            { label: 'Experience:', value: `${this.scene.player.experience}/${this.scene.player.nextLevelExperience()}`, color: '#00ff00' },
+            { label: 'Strength:', value: this.scene.player.strength.toString(), color: '#ff9966' },
+            { label: 'Defense:', value: this.scene.player.defense.toString(), color: '#66ccff' }
+        ];
+    
+        // Update each stat text
+        this.container.list.forEach((item, index) => {
+            if (item instanceof Phaser.GameObjects.Text && index < stats.length) {
+                const stat = stats[index];
+                item.setText(`${stat.label} ${stat.value}`);
+                item.setStyle({ fill: stat.color });
+            }
+        });
+    
+        // Update health and mana bars
+        this.updateBar(this.healthBar, this.scene.playerStats.health);
+        this.updateBar(this.manaBar, this.scene.playerStats.mana);
     }
 }

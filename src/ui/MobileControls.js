@@ -46,6 +46,24 @@ class MobileControls {
         this.joystickBase = makeFixed(this.scene.add.circle(baseX, baseY, joystickRadius, 0x333333, 0.3));
         this.joystickThumb = makeFixed(this.scene.add.circle(baseX, baseY, 40, 0x666666, 0.8));
 
+        // Make joystick interactive
+        this.joystickBase.setInteractive()
+            .on('pointerdown', (pointer) => this.startJoystick(pointer))
+            .on('pointerup', () => this.stopJoystick())
+            .on('pointerout', () => this.stopJoystick());
+
+        this.scene.input.on('pointermove', (pointer) => {
+            if (this.joystick.isActive && this.joystick.pointer === pointer) {
+                this.updateJoystick(pointer);
+            }
+        });
+
+        this.scene.input.on('pointerup', (pointer) => {
+            if (this.joystick.pointer === pointer) {
+                this.stopJoystick();
+            }
+        });
+
         // Attack button
         const attackButton = makeFixed(this.scene.add.circle(
             this.scene.game.config.width - padding - buttonSize,
@@ -77,7 +95,6 @@ class MobileControls {
         ).setOrigin(0.5));
 
         // Hacer los botones interactivos
-        this.joystickBase.setInteractive();
         attackButton.setInteractive();
         menuButton.setInteractive();
 
@@ -201,12 +218,11 @@ class MobileControls {
         this.joystickThumb.x = this.joystick.baseX;
         this.joystickThumb.y = this.joystick.baseY;
         
-        // Reset solo los controles direccionales
+        // Reset all directional controls
         this.controls.up = false;
         this.controls.down = false;
         this.controls.left = false;
         this.controls.right = false;
-        // Mantener el estado de attack y menu
     }
 
     getControls() {
