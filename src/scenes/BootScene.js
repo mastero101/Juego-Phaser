@@ -4,10 +4,11 @@ class BootScene extends Phaser.Scene {
     }
 
     preload() {
-        // Here we'll load assets later
+        console.log('BootScene: Loading...');
     }
 
     create() {
+        console.log('BootScene: Starting game...');
         this.scene.start('GameScene');
     }
 }

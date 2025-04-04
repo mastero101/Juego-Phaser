@@ -1,115 +1,228 @@
 class GameScene extends Phaser.Scene {
     constructor() {
         super({ key: 'GameScene' });
-        
-        // Initialize player stats
-        this.playerStats = {
-            level: 1,
-            health: 100,
-            maxHealth: 100,
-            mana: 50,
-            maxMana: 50,
-            magicLevel: 1,
-            strength: 10,
-            defense: 5,
-            experience: 0,
-            nextLevel: 100,
-            weaponSkills: {
-                sword: 5,
-                bow: 1,
-                staff: 3
-            },
-            magicSkills: {
-                fire: 2,
-                ice: 1,
-                lightning: 1
-            }
-        };
-
-        // Initialize enemy types
-        this.enemyTypes = {
-            slime: {
-                health: 20,
-                damage: 5,
-                speed: 40,
-                experience: 15,
-                color: 0x00FF00
-            },
-            skeleton: {
-                health: 35,
-                damage: 8,
-                speed: 60,
-                experience: 25,
-                color: 0xCCCCCC
-            },
-            goblin: {
-                health: 30,
-                damage: 6,
-                speed: 80,
-                experience: 20,
-                color: 0x967969
-            }
+        this.playerStats = {...initialPlayerStats};
+        this.enemyTypes = enemyTypes;
+        this.player = null;
+        this.worldSize = {
+            width: 50,
+            height: 50,
+            tileSize: 32
         };
     }
 
     create() {
+        // First, create textures and initialize containers
         const graphics = this.add.graphics();
+        createTileTextures(this);
+        createCharacterTexture(this, 'playerIdle', false);
+        createCharacterTexture(this, 'playerWalk1', true);
+        createCharacterTexture(this, 'playerWalk2', false);
+        createEnemyTextures(this, this.enemyTypes);
         
-        // Create textures first
-        this.createTileTextures();
-        this.createCharacterTexture(graphics, 'playerIdle', false);
-        this.createCharacterTexture(graphics, 'playerWalk1', true);
-        this.createCharacterTexture(graphics, 'playerWalk2', false);
-        this.createEnemyTextures();
-        
-        // Create physics groups
-        this.waterTiles = this.physics.add.staticGroup();
-        this.treeTiles = this.physics.add.staticGroup();
-        this.enemies = this.physics.add.group();
-        
-        // Generate map
-        for (let y = 0; y < 50; y++) {
-            for (let x = 0; x < 50; x++) {
-                const tileX = x * 32;
-                const tileY = y * 32;
-                
-                // Base grass everywhere
-                const grass = this.add.image(tileX, tileY, 'grass');
-                grass.setOrigin(0);
-                
-                const noise = Math.sin(x * 0.2) * Math.cos(y * 0.2) + Math.random() * 0.4;
-                
-                if (noise > 0.6) {
-                    const tree = this.treeTiles.create(tileX, tileY, 'tree');
-                    tree.setOrigin(0);
-                    tree.body.setSize(16, 16);  // Ajustar hitbox
-                    tree.body.setOffset(8, 16);  // Mover hitbox a la base del árbol
-                } else if (noise < -0.6) {
-                    const water = this.waterTiles.create(tileX, tileY, 'water');
-                    water.setOrigin(0);
-                } else if (noise > 0.2 && noise < 0.4) {
-                    const path = this.add.image(tileX, tileY, 'path');
-                    path.setOrigin(0);
-                }
-            }
+        // Initialize containers for map generation
+        this.containers = {
+            ground: this.add.container(0, 0),
+            objects: this.add.container(0, 0),
+            entities: this.add.container(0, 0)
+        };
+
+        // Create map first but don't setup collisions yet
+        this.mapGenerator = new MapGenerator(this, this.containers); // Pass containers here
+        this.mapGenerator.generateMap();
+
+        graphics.destroy();
+
+        // Then setup world physics
+        this.physics.world.setBounds(0, 0, 
+            this.worldSize.width * this.worldSize.tileSize, 
+            this.worldSize.height * this.worldSize.tileSize
+        );
+
+        // Setup camera before creating entities
+        this.setupCamera();
+
+        // Create map first but don't setup collisions yet
+        this.mapGenerator = new MapGenerator(this);
+        this.mapGenerator.generateMap(); // Only generate the map tiles
+
+        // Create player before enemy system
+        this.player = new Player(this);
+        const playerSprite = this.player.create(400, 300);
+        playerSprite.setCollideWorldBounds(true);
+
+        // Now setup map collisions after player exists
+        this.mapGenerator.setupCollisions();
+
+        // Setup camera follow
+        this.cameras.main.startFollow(playerSprite, true, 0.09, 0.09);
+        this.cameras.main.setZoom(1.2);
+
+        // Create enemy system after player exists
+        this.enemySystem = new EnemySystem(this);
+        this.enemySystem.create();
+
+        // Asegurarnos de que enemies existe y es un array antes de usar forEach
+        if (this.enemySystem.enemies && Array.isArray(this.enemySystem.enemies)) {
+            this.enemySystem.enemies.forEach(enemy => {
+                enemy.nameTag = createEnemyNameTag(this, enemy.x, enemy.y, enemy.type);
+            });
         }
 
-        // Initialize player after map
-        this.player = this.physics.add.sprite(400, 300, 'playerIdle');
-        this.player.setScale(2);
-        this.player.setDepth(1);
-        
-        // Setup collisions
-        this.physics.add.collider(this.player, this.treeTiles);
-        this.physics.add.overlap(this.player, this.waterTiles, this.handleWaterMovement, null, this);
-        this.physics.add.collider(this.player, this.enemies, this.handleEnemyCollision, null, this);
-        this.physics.add.collider(this.enemies, this.treeTiles);
-        this.physics.add.collider(this.enemies, this.enemies);
+        // Create UI elements last
+        this.statusMenu = new StatusMenu(this);
+        this.statusMenu.create();
 
-        // Spawn enemies after all collisions are set
-        this.spawnEnemies();
+        // Create water effects before setting up events
+        this.createWaterEffects();
+
+        // Setup controls and events
+        this.setupControls();
+        this.setupKeyboardEvents();
+
+        // Crear barras de salud y maná en la parte superior derecha
+        this.createTopRightBars();
+    }
+
+    createWaterEffects() {
+        if (!this.textures.exists('water')) {
+            const graphics = this.add.graphics();
+            graphics.fillStyle(0x4dabf7, 0.6);
+            graphics.fillCircle(4, 4, 4);
+            graphics.generateTexture('water', 8, 8);
+            graphics.destroy();
+        }
+
+        // Nuevo sistema de partículas
+        this.waterEffect = {
+            particles: [],
+            maxParticles: 10,
+            timer: 0,
+            
+            create: (scene, x, y) => {
+                const particle = scene.add.image(x, y, 'water')
+                    .setAlpha(0.5)
+                    .setScale(0.2);
+                
+                this.waterEffect.particles.push(particle); // Mover antes de la animación
+
+                scene.tweens.add({
+                    targets: particle,
+                    alpha: 0,
+                    scale: 0,
+                    duration: 1000,
+                    onComplete: () => {
+                        this.waterEffect.particles = this.waterEffect.particles.filter(p => p !== particle);
+                        particle.destroy();
+                    }
+                });
+            },
+
+            start: (x, y) => {
+                this.waterEffect.active = true;
+                this.waterEffect.x = x;
+                this.waterEffect.y = y;
+            },
+
+            stop: () => {
+                this.waterEffect.active = false;
+            },
+
+            update: (scene, delta) => {
+                if (!this.waterEffect.active) return;
+
+                this.waterEffect.timer += delta;
+                if (this.waterEffect.timer > 100) {
+                    this.waterEffect.timer = 0;
+                    if (this.waterEffect.particles.length < this.waterEffect.maxParticles) {
+                        const offsetX = (Math.random() - 0.5) * 20;
+                        const offsetY = (Math.random() - 0.5) * 20;
+                        this.waterEffect.create(
+                            scene, 
+                            this.waterEffect.x + offsetX, 
+                            this.waterEffect.y + offsetY
+                        );
+                    }
+                }
+            }
+        };
+    }
+
+    update(time, delta) {
+        this.player.update(this.cursors, this.wasd, this.statusMenu.visible);
+        this.enemySystem.update();
         
-        // Setup controls
+        // Verificar que enemies existe antes de actualizar etiquetas
+        if (this.enemySystem.enemies && Array.isArray(this.enemySystem.enemies)) {
+            this.enemySystem.enemies.forEach(enemy => {
+                if (enemy.nameTag) {
+                    enemy.nameTag.setPosition(enemy.x, enemy.y - 20);
+                }
+            });
+        }
+
+        // Actualizamos efectos de partículas si el jugador está en agua
+        if (this.player.isInWater) {
+            this.events.emit('playerInWater', 
+                this.player.sprite.x, 
+                this.player.sprite.y
+            );
+        } else {
+            this.events.emit('playerOutWater');
+        }
+
+        // Actualizar efecto de agua
+        if (this.waterEffect) {
+            this.waterEffect.update(this, delta);
+        }
+
+        // Actualizar barras de salud y maná
+        this.statusMenu.updateBar(this.statusMenu.healthBar, this.playerStats.health);
+        this.statusMenu.updateBar(this.statusMenu.manaBar, this.playerStats.mana);
+
+        // Eliminar la lógica que actualiza la posición del menú
+        // if (this.statusMenu && this.statusMenu.container) {
+        //     const camera = this.cameras.main;
+        //     this.statusMenu.container.setPosition(
+        //         camera.scrollX + 10,
+        //         camera.scrollY + 10
+        //     );
+        // }
+        // Update the bars
+        this.updateTopRightBars();
+    }
+
+    setupKeyboardEvents() {
+        // Status menu toggle with 'E' key
+        this.statusKey.on('down', () => {
+            this.statusMenu.toggle();
+            this.sound.play('menuToggle', { volume: 0.5 });
+        });
+
+        // Evento para interacción con agua
+        this.events.on('playerInWater', (x, y) => {
+            if (this.waterEffect) {
+                this.waterEffect.start(x, y);
+            }
+        });
+
+        this.events.on('playerOutWater', () => {
+            if (this.waterEffect) {
+                this.waterEffect.stop();
+            }
+        });
+    }
+
+    setupCamera() {
+        this.cameras.main.setBackgroundColor('#2d572c');
+        this.cameras.main.setRoundPixels(true);
+        this.cameras.main.setBounds(0, 0, 
+            this.worldSize.width * this.worldSize.tileSize, 
+            this.worldSize.height * this.worldSize.tileSize
+        );
+    }
+
+    setupControls() {
         this.cursors = this.input.keyboard.createCursorKeys();
         this.wasd = this.input.keyboard.addKeys({
             up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -117,532 +230,93 @@ class GameScene extends Phaser.Scene {
             left: Phaser.Input.Keyboard.KeyCodes.A,
             right: Phaser.Input.Keyboard.KeyCodes.D
         });
-
-        // Setup animations
-        this.anims.create({
-            key: 'walk',
-            frames: [
-                { key: 'playerIdle' },
-                { key: 'playerWalk1' },
-                { key: 'playerWalk2' }
-            ],
-            frameRate: 8,
-            repeat: -1
-        });
-
-        // Setup camera
-        this.cameras.main.startFollow(this.player, true);
-
-        // Add collisions and overlaps
-        this.physics.add.collider(this.player, this.treeTiles);
-        this.physics.add.overlap(this.player, this.waterTiles, this.handleWaterMovement, null, this);
-
-        // Setup status menu key
         this.statusKey = this.input.keyboard.addKey('E');
-        
-        // Create status menu (initially hidden)
-        this.statusMenu = this.add.container(10, 10);
-        this.statusMenu.setScrollFactor(0);
-        
-        // Create styled background with border
-        const menuBg = this.add.rectangle(150, 100, 320, 600, 0x2d2d2d, 0.85);
-        menuBg.setStrokeStyle(2, 0x4a4a4a);
-        this.statusMenu.add(menuBg);
-        
-        // Add decorative header
-        const headerBg = this.add.rectangle(150, 30, 320, 40, 0x3d3d3d, 0.9);
-        headerBg.setStrokeStyle(2, 0x4a4a4a);
-        this.statusMenu.add(headerBg);
 
-        // Create collapsible sections
-        this.createBaseStats();
-        this.createCollapsibleSection('WEAPON SKILLS', this.playerStats.weaponSkills, 200);
-        this.createCollapsibleSection('MAGIC SKILLS', this.playerStats.magicSkills, 300);
-        
-        this.statusMenu.setVisible(false);
+        // Create status menu button
+        const buttonBg = this.add.rectangle(780, 550, 80, 30, 0x2d2d2d, 0.9)
+            .setScrollFactor(0)
+            .setStrokeStyle(2, 0x4a4a4a)
+            .setInteractive({ useHandCursor: true });
 
-        // Add mouse input for the whole scene
-        this.input.on('gameobjectdown', this.handleMenuClick, this);
-    }
-
-    createBaseStats() {
-        const style = {
-            font: '16px Arial',
-            fill: '#ffffff',
-            padding: { x: 10, y: 5 }
-        };
-        
-        const stats = [
-            { label: 'Level:', value: this.playerStats.level.toString() },
-            { label: 'Health:', value: `${this.playerStats.health}/${this.playerStats.maxHealth}`, color: '#ff6b6b' },
-            { label: 'Mana:', value: `${this.playerStats.mana}/${this.playerStats.maxMana}`, color: '#4dabf7' },
-            { label: 'Magic Level:', value: this.playerStats.magicLevel.toString(), color: '#9775fa' },
-            { label: 'Strength:', value: this.playerStats.strength.toString(), color: '#ffd43b' },
-            { label: 'Defense:', value: this.playerStats.defense.toString(), color: '#69db7c' }
-        ];
-
-        let currentY = 55;
-        stats.forEach(stat => {
-            const label = this.add.text(40, currentY, stat.label, style);
-            const valueStyle = {...style, fill: stat.color || '#ffffff'};
-            const value = this.add.text(170, currentY, stat.value, valueStyle);
-            this.statusMenu.add(label);
-            this.statusMenu.add(value);
-            currentY += 25;
-        });
-    }
-
-    createCollapsibleSection(title, items, startY) {
-        const style = {
+        const buttonText = this.add.text(780, 550, 'Stats (E)', {
             font: '14px Arial',
             fill: '#ffffff'
-        };
+        })
+        .setScrollFactor(0)
+        .setOrigin(0.5);
 
-        // Create section header
-        const headerBg = this.add.rectangle(120, startY, 200, 25, 0x3d3d3d, 0.9);
-        headerBg.setStrokeStyle(1, 0x6d6d6d);
-        headerBg.setInteractive({ useHandCursor: true });
-        
-        // Add header text and toggle button
-        const headerText = this.add.text(40, startY - 8, title, {
-            ...style,
-            font: 'bold 14px Arial'
+        // Button events
+        buttonBg.on('pointerdown', () => {
+            this.statusMenu.toggle();
+            this.sound.play('menuToggle', { volume: 0.5 });
         });
-        
-        const toggleButton = this.add.text(195, startY - 8, '+', {
-            font: 'bold 16px Arial',
+
+        buttonBg.on('pointerover', () => {
+            buttonBg.setFillStyle(0x3d3d3d);
+            buttonText.setStyle({ fill: '#ffd700' });
+        });
+
+        buttonBg.on('pointerout', () => {
+            buttonBg.setFillStyle(0x2d2d2d);
+            buttonText.setStyle({ fill: '#ffffff' });
+        });
+    }
+
+    createTopRightBars() {
+        const barWidth = 200;
+        const barHeight = 20;
+        const gameWidth = this.game.config.width;
+        const offsetX = gameWidth - 70;  // Moved more to the left
+        const offsetY = 52;   // Moved down
+    
+        // Health bar
+        this.healthBarBg = this.add.rectangle(offsetX, offsetY, barWidth, barHeight, 0x4f0000)
+            .setOrigin(1, 0)
+            .setScrollFactor(0)
+            .setDepth(1000);
+        this.healthBar = this.add.rectangle(offsetX, offsetY, barWidth, barHeight, 0xff6b6b)
+            .setOrigin(1, 0)
+            .setScrollFactor(0)
+            .setDepth(1000);
+    
+        // Mana bar
+        this.manaBarBg = this.add.rectangle(offsetX, offsetY + 30, barWidth, barHeight, 0x00264f)
+            .setOrigin(1, 0)
+            .setScrollFactor(0)
+            .setDepth(1000);
+        this.manaBar = this.add.rectangle(offsetX, offsetY + 30, barWidth, barHeight, 0x4dabf7)
+            .setOrigin(1, 0)
+            .setScrollFactor(0)
+            .setDepth(1000);
+    
+        // Text labels - adjusted to match new positions
+        this.healthText = this.add.text(offsetX - barWidth + 5, offsetY + 4, 'HP', {
+            font: '12px Arial',
             fill: '#ffffff'
-        });
-
-        // Create content container
-        const content = this.add.container(0, startY + 25);
-        
-        // Add items with background
-        Object.entries(items).forEach(([key, value], index) => {
-            const y = index * 25;
-            const itemBg = this.add.rectangle(120, y, 180, 22, 0x232323, 0.7);
-            const label = this.add.text(40, y - 8, key + ':', style);
-            const valueText = this.add.text(140, y - 8, value.toString(), {
-                ...style,
-                fill: '#ffd700'
-            });
-            
-            content.add([itemBg, label, valueText]);
-        });
-
-        this.statusMenu.add([headerBg, headerText, toggleButton, content]);
-        content.setVisible(false);
-
-        // Handle click events
-        headerBg.on('pointerdown', () => {
-            content.setVisible(!content.visible);
-            toggleButton.setText(content.visible ? '-' : '+');
-        });
-
-        return { header: headerBg, content };
+        })
+        .setScrollFactor(0)
+        .setDepth(1000);
+    
+        this.manaText = this.add.text(offsetX - barWidth + 5, offsetY + 34, 'MP', {
+            font: '12px Arial',
+            fill: '#ffffff'
+        })
+        .setScrollFactor(0)
+        .setDepth(1000);
     }
 
-    getNextSection(currentY) {
-        const sections = this.statusMenu.list.filter(item => 
-            item.type === 'Container' && 
-            item.y > currentY
-        );
-        return sections[0];
-    }
-
-    handleMenuClick(pointer, gameObject) {
-        if (this.statusMenu.visible && gameObject.contentRef) {
-            gameObject.emit('pointerdown');
-        }
-    }
-
-    update() {
-        const baseSpeed = 160;
-        const speed = this.isInWater ? baseSpeed * 0.5 : baseSpeed;
-        this.isInWater = false;  // Reset water state each frame
+    updateTopRightBars() {
+        // Update health and mana bars
+        if (this.healthBar && this.manaBar) {
+            const healthRatio = this.playerStats.health / this.playerStats.maxHealth;
+            const manaRatio = this.playerStats.mana / this.playerStats.maxMana;
         
-        let velocityX = 0;
-        let velocityY = 0;
-
-        // Calculate movement
-        if (this.cursors.left.isDown || this.wasd.left.isDown) {
-            velocityX = -speed;
-            this.player.setFlipX(true);
-        } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-            velocityX = speed;
-            this.player.setFlipX(false);
-        }
-
-        if (this.cursors.up.isDown || this.wasd.up.isDown) {
-            velocityY = -speed;
-        } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-            velocityY = speed;
-        }
-
-        // Apply diagonal movement normalization
-        if (velocityX !== 0 && velocityY !== 0) {
-            velocityX *= 0.707;
-            velocityY *= 0.707;
-        }
-
-        // Apply movement
-        this.player.setVelocity(velocityX, velocityY);
-
-        // Animation control
-        if (velocityX !== 0 || velocityY !== 0) {
-            this.player.anims.play('walk', true);
-        } else {
-            this.player.setTexture('playerIdle');
-            this.player.anims.stop();
-        }
-
-        // Status menu toggle
-        if (Phaser.Input.Keyboard.JustDown(this.statusKey)) {
-            this.statusMenu.setVisible(!this.statusMenu.visible);
-        }
+            this.healthBar.displayWidth = healthRatio * this.healthBarBg.width;
+            this.manaBar.displayWidth = manaRatio * this.manaBarBg.width;
         
-        // Disable movement when menu is open
-        if (this.statusMenu.visible) {
-            this.player.setVelocity(0, 0);
-            return;
+            // Update text to show current/max values
+            this.healthText.setText(`HP: ${Math.floor(this.playerStats.health)}/${this.playerStats.maxHealth}`);
+            this.manaText.setText(`MP: ${Math.floor(this.playerStats.mana)}/${this.playerStats.maxMana}`);
         }
-    }
-
-    handleWaterMovement(player, water) {
-        this.isInWater = true;
-    }
-
-    createCharacterTexture(graphics, textureName, isStepFrame) {
-        graphics.clear();
-
-        const colors = {
-            helmet: 0x808080,
-            helmetShade: 0x606060,
-            hood: 0x8B0000,      
-            hoodShade: 0x660000,
-            skin: 0xFFD1B3,      
-            clothes: 0x228B22,   
-            clothesShade: 0x006400,
-            belt: 0x8B4513,      
-            beltBuckle: 0xDAA520,
-            woodenSword: 0xDEB887,
-            woodenSwordShade: 0xCD853F,  // Darker wood for shading
-            woodenHandle: 0x8B4513,
-            handleWrap: 0x654321,        // Dark brown for handle wrapping
-            guardColor: 0xB8860B         // Dark golden for sword guard
-        };
-
-        // Helmet
-        graphics.fillStyle(colors.helmet);
-        graphics.fillRect(6, 0, 20, 6);
-        graphics.fillStyle(colors.helmetShade);
-        graphics.fillRect(6, 0, 4, 6);
-
-        // Hood under helmet
-        graphics.fillStyle(colors.hood);
-        graphics.fillRect(6, 6, 20, 10);
-        graphics.fillStyle(colors.hoodShade);
-        graphics.fillRect(6, 6, 4, 10);
-        
-        // Face
-        graphics.fillStyle(colors.skin);
-        graphics.fillRect(10, 8, 12, 8);
-        
-        // Eyes
-        graphics.fillStyle(0x000000);
-        graphics.fillRect(12, 10, 2, 2);
-        graphics.fillRect(18, 10, 2, 2);
-
-        // Clothes
-        graphics.fillStyle(colors.clothes);
-        graphics.fillRect(8, 16, 16, 12);
-        graphics.fillStyle(colors.clothesShade);
-        graphics.fillRect(8, 16, 4, 12);
-
-        // Hands
-        graphics.fillStyle(colors.skin);
-        graphics.fillRect(6, 20, 4, 4);  // Left hand
-        graphics.fillRect(22, 20, 4, 4); // Right hand
-
-        // Belt
-        graphics.fillStyle(colors.belt);
-        graphics.fillRect(8, 24, 16, 4);
-        graphics.fillStyle(colors.beltBuckle);
-        graphics.fillRect(14, 25, 4, 2);
-
-        // Wooden Sword (adjusted position)
-        graphics.fillStyle(colors.woodenHandle);
-        graphics.fillRect(26, 18, 3, 6); // Handle
-        graphics.fillStyle(colors.woodenSword);
-        graphics.fillRect(26, 8, 3, 10);  // Blade longer and wider
-
-        // Shoes
-        graphics.fillStyle(colors.shoes);
-        if (isStepFrame) {
-            // Walking frame 1 - feet apart
-            graphics.fillRect(8, 28, 6, 4);  // Left shoe
-            graphics.fillRect(18, 28, 6, 4); // Right shoe
-        } else {
-            // Standing or Walking frame 2 - feet together
-            graphics.fillRect(11, 28, 5, 4);  // Left shoe
-            graphics.fillRect(16, 28, 5, 4); // Right shoe
-        }
-
-        graphics.generateTexture(textureName, 32, 32);
-        graphics.clear();
-    }
-
-    createTileTextures() {
-        const graphics = this.add.graphics();
-        const tileSize = 32;
-
-        // Grass tile
-        graphics.clear();
-        graphics.fillStyle(0x2E8B57);  // Base green
-        graphics.fillRect(0, 0, tileSize, tileSize);
-        // Add grass details
-        graphics.fillStyle(0x3CB371);
-        for (let i = 0; i < 8; i++) {
-            const x = Math.random() * tileSize;
-            const y = Math.random() * tileSize;
-            graphics.fillRect(x, y, 2, 4);
-        }
-        graphics.generateTexture('grass', tileSize, tileSize);
-
-        // Tree tile
-        graphics.clear();
-        graphics.fillStyle(0x8B4513);  // Trunk
-        graphics.fillRect(12, 16, 8, 16);
-        graphics.fillStyle(0x228B22);  // Leaves
-        graphics.fillRect(6, 4, 20, 16);
-        graphics.generateTexture('tree', tileSize, tileSize);
-
-        // Water tile
-        graphics.clear();
-        graphics.fillStyle(0x4169E1);  // Base water
-        graphics.fillRect(0, 0, tileSize, tileSize);
-        graphics.fillStyle(0x87CEEB);  // Water highlights
-        for (let i = 0; i < 4; i++) {
-            const x = Math.random() * tileSize;
-            const y = Math.random() * tileSize;
-            graphics.fillRect(x, y, 4, 2);
-        }
-        graphics.generateTexture('water', tileSize, tileSize);
-
-        // Path tile
-        graphics.clear();
-        graphics.fillStyle(0xDEB887);  // Base path
-        graphics.fillRect(0, 0, tileSize, tileSize);
-        graphics.fillStyle(0xD2691E);  // Path details
-        for (let i = 0; i < 6; i++) {
-            const x = Math.random() * tileSize;
-            const y = Math.random() * tileSize;
-            graphics.fillRect(x, y, 3, 3);
-        }
-        graphics.generateTexture('path', tileSize, tileSize);
-
-        graphics.clear();
-    }
-
-    createProceduralMap() {
-        const mapWidth = 50;
-        const mapHeight = 50;
-        
-        // Create container for map tiles
-        this.mapContainer = this.add.container(0, 0);
-        this.wallsContainer = this.add.container(0, 0);
-        
-        // Generate base terrain
-        for (let y = 0; y < mapHeight; y++) {
-            for (let x = 0; x < mapWidth; x++) {
-                const tileX = x * 32;
-                const tileY = y * 32;
-                
-                // Add grass everywhere as base
-                const grass = this.add.image(tileX, tileY, 'grass');
-                grass.setOrigin(0);
-                this.mapContainer.add(grass);
-                
-                // Random features
-                const rand = Math.random();
-                if (rand < 0.05) {  // 5% chance for trees
-                    const tree = this.add.image(tileX, tileY, 'tree');
-                    tree.setOrigin(0);
-                    this.wallsContainer.add(tree);
-                    // Add physics body for collision
-                    this.physics.add.existing(tree, true);
-                } else if (rand < 0.08) {  // 3% chance for water
-                    const water = this.add.image(tileX, tileY, 'water');
-                    water.setOrigin(0);
-                    this.wallsContainer.add(water);
-                    // Add physics body for collision
-                    this.physics.add.existing(water, true);
-                }
-            }
-        }
-
-        // Generate paths
-        this.generatePaths();
-    }
-
-    generatePaths() {
-        const pathCount = 3;
-        for (let i = 0; i < pathCount; i++) {
-            let x = Math.floor(Math.random() * 50);
-            let y = Math.floor(Math.random() * 50);
-            
-            for (let step = 0; step < 50; step++) {
-                const path = this.add.image(x * 32, y * 32, 'path');
-                path.setOrigin(0);
-                this.mapContainer.add(path);
-                
-                // Random direction
-                const direction = Math.floor(Math.random() * 4);
-                switch(direction) {
-                    case 0: x++; break;
-                    case 1: x--; break;
-                    case 2: y++; break;
-                    case 3: y--; break;
-                }
-                
-                x = Phaser.Math.Clamp(x, 0, 49);
-                y = Phaser.Math.Clamp(y, 0, 49);
-            }
-        }
-    }
-
-    createEnemyTextures() {
-        const graphics = this.add.graphics();
-        
-        Object.entries(this.enemyTypes).forEach(([type, data]) => {
-            graphics.clear();
-            graphics.fillStyle(data.color);
-            
-            // Base shape
-            graphics.fillRect(8, 8, 16, 16);
-            
-            // Details based on enemy type
-            if (type === 'slime') {
-                graphics.fillStyle(0x00AA00);
-                graphics.fillRect(10, 12, 4, 4);
-                graphics.fillRect(18, 12, 4, 4);
-            } else if (type === 'skeleton') {
-                graphics.fillStyle(0xFFFFFF);
-                graphics.fillRect(12, 12, 2, 2);
-                graphics.fillRect(18, 12, 2, 2);
-            } else if (type === 'goblin') {
-                graphics.fillStyle(0x554422);
-                graphics.fillRect(10, 16, 12, 4);
-            }
-            
-            graphics.generateTexture(type, 32, 32);
-        });
-        
-        graphics.destroy();
-    }
-
-    spawnEnemies() {
-        const enemyTypes = Object.keys(this.enemyTypes);
-        
-        // Spawn 10 random enemies
-        for (let i = 0; i < 10; i++) {
-            const type = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
-            const x = Phaser.Math.Between(100, 1500);
-            const y = Phaser.Math.Between(100, 1500);
-            
-            const enemy = this.enemies.create(x, y, type);
-            enemy.setData('type', type);
-            enemy.setData('health', this.enemyTypes[type].health);
-            enemy.setData('damage', this.enemyTypes[type].damage);
-            enemy.setData('speed', this.enemyTypes[type].speed);
-            enemy.setData('experience', this.enemyTypes[type].experience);
-        }
-    }
-
-    handleEnemyCollision(player, enemy) {
-        // Basic collision handling
-        const damage = enemy.getData('damage');
-        this.playerStats.health = Math.max(0, this.playerStats.health - damage);
-        
-        // Simple knockback
-        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, player.x, player.y);
-        player.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
-    }
-
-    update() {
-        const baseSpeed = 160;
-        const speed = this.isInWater ? baseSpeed * 0.5 : baseSpeed;
-        this.isInWater = false;  // Reset water state each frame
-        
-        let velocityX = 0;
-        let velocityY = 0;
-
-        // Calculate movement
-        if (this.cursors.left.isDown || this.wasd.left.isDown) {
-            velocityX = -speed;
-            this.player.setFlipX(true);
-        } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-            velocityX = speed;
-            this.player.setFlipX(false);
-        }
-
-        if (this.cursors.up.isDown || this.wasd.up.isDown) {
-            velocityY = -speed;
-        } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-            velocityY = speed;
-        }
-
-        // Apply diagonal movement normalization
-        if (velocityX !== 0 && velocityY !== 0) {
-            velocityX *= 0.707;
-            velocityY *= 0.707;
-        }
-
-        // Apply movement
-        this.player.setVelocity(velocityX, velocityY);
-
-        // Animation control
-        if (velocityX !== 0 || velocityY !== 0) {
-            this.player.anims.play('walk', true);
-        } else {
-            this.player.setTexture('playerIdle');
-            this.player.anims.stop();
-        }
-
-        // Status menu toggle
-        if (Phaser.Input.Keyboard.JustDown(this.statusKey)) {
-            this.statusMenu.setVisible(!this.statusMenu.visible);
-        }
-        
-        // Disable movement when menu is open
-        if (this.statusMenu.visible) {
-            this.player.setVelocity(0, 0);
-            return;
-        }
-        
-        // Update enemies
-        this.enemies.getChildren().forEach(enemy => {
-            if (enemy.active) {
-                const distance = Phaser.Math.Distance.Between(
-                    enemy.x, enemy.y,
-                    this.player.x, this.player.y
-                );
-                
-                if (distance < 200) {
-                    const angle = Phaser.Math.Angle.Between(
-                        enemy.x, enemy.y,
-                        this.player.x, this.player.y
-                    );
-                    
-                    const speed = enemy.getData('speed');
-                    enemy.setVelocity(
-                        Math.cos(angle) * speed,
-                        Math.sin(angle) * speed
-                    );
-                } else {
-                    enemy.setVelocity(0, 0);
-                }
-            }
-        });
     }
 }
