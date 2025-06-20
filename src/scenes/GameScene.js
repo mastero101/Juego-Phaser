@@ -103,6 +103,8 @@ class GameScene extends Phaser.Scene {
 
         // Detect orientation change
         window.addEventListener('orientationchange', this.handleOrientationChange.bind(this));
+        // Detect window resize
+        window.addEventListener('resize', this.handleOrientationChange.bind(this));
     }
 
     handleOrientationChange() {

@@ -119,13 +119,72 @@ class MobileControls {
             }
         });
 
+        // --- Botón de rotar orientación (ahora en parte superior central) ---
+        const rotateButtonSize = 60;
+        const rotateButtonX = this.scene.game.config.width / 2; // Centro superior
+        const rotateButtonY = padding + rotateButtonSize / 2 + 30; // Un poco más abajo para no tapar las barras
+        
+        // SVG simple de icono de rotar (como texto)
+        const rotateIcon = '⟳';
+        const rotateButton = makeFixed(this.scene.add.circle(
+            rotateButtonX,
+            rotateButtonY,
+            rotateButtonSize / 2,
+            0x222222
+        ).setAlpha(0.7));
+        const rotateText = makeFixed(this.scene.add.text(
+            rotateButtonX,
+            rotateButtonY,
+            rotateIcon,
+            { font: '36px Arial', color: '#ffffff' }
+        ).setOrigin(0.5));
+        
+        rotateButton.setInteractive({ useHandCursor: true });
+        rotateButton.on('pointerdown', () => {
+            // Intentar pantalla completa sin await
+            const docElm = document.documentElement;
+            try {
+                if (docElm.requestFullscreen) {
+                    docElm.requestFullscreen();
+                } else if (docElm.mozRequestFullScreen) { /* Firefox */
+                    docElm.mozRequestFullScreen();
+                } else if (docElm.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
+                    docElm.webkitRequestFullscreen();
+                } else if (docElm.msRequestFullscreen) { /* IE/Edge */
+                    docElm.msRequestFullscreen();
+                }
+            } catch (e) {
+                // No hacer nada, solo continuar
+            }
+            // Intentar cambiar orientación sin await
+            if (screen.orientation && screen.orientation.lock) {
+                try {
+                    const current = screen.orientation.type;
+                    if (current.includes('portrait')) {
+                        screen.orientation.lock('landscape').catch(() => this.showOrientationMessage());
+                    } else {
+                        screen.orientation.lock('portrait').catch(() => this.showOrientationMessage());
+                    }
+                } catch (e) {
+                    this.showOrientationMessage();
+                }
+            } else {
+                this.showOrientationMessage();
+            }
+        });
+        // También el texto es interactivo
+        rotateText.setInteractive({ useHandCursor: true });
+        rotateText.on('pointerdown', () => rotateButton.emit('pointerdown'));
+        
         this.container.add([
             this.joystickBase, 
             this.joystickThumb, 
             attackButton, 
             attackText,
             menuButton,
-            menuText
+            menuText,
+            rotateButton,
+            rotateText
         ]);
     }
 
@@ -233,5 +292,21 @@ class MobileControls {
         if (this.container) {
             this.container.destroy();
         }
+    }
+
+    // Método para mostrar mensaje si no se puede cambiar orientación
+    showOrientationMessage() {
+        if (this.orientationMsg) {
+            this.orientationMsg.destroy();
+        }
+        this.orientationMsg = this.scene.add.text(
+            this.scene.game.config.width / 2,
+            40,
+            'No se pudo cambiar la orientación automáticamente. Gira tu dispositivo.',
+            { font: '18px Arial', color: '#fff', backgroundColor: '#222', padding: { x: 10, y: 6 } }
+        ).setOrigin(0.5).setDepth(2000);
+        this.scene.time.delayedCall(2500, () => {
+            if (this.orientationMsg) this.orientationMsg.destroy();
+        });
     }
 }
